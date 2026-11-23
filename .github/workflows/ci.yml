@@ -80,8 +80,8 @@ jobs:
       - name: Install FPC and Lazarus IDE
         uses: osvegn/setup-lazarus-fpcup@v1.0.1
         with:
-          laz: lazarus_4_0
-          fpc: release_3_2_2
+          laz: fixes_4
+          fpc: fixes_3_2
 
       - name: Link packages
         run: |
