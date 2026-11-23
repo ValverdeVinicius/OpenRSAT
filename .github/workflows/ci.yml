@@ -88,12 +88,13 @@ jobs:
           lazbuild --version
           lazbuild --add-package-link submodules/mORMot2/packages/lazarus/mormot2.lpk
           lazbuild --add-package-link submodules/pltis_uicomponents/pack/pltis_uicomponents.lpk
-          lazbuild --add-package-link submodules/pltis_tsmbios/Packages/tsmbios.lpk
           lazbuild --add-package-link submodules/pltis_utils/pltis_utils.lpk
           lazbuild --add-package-link submodules/pltis_virtualtrees/virtualtreeview_package.lpk
           lazbuild --add-package-link submodules/metadarkstyle/metadarkstyle.lpk
           lazbuild --add-package-link submodules/metadarkstyle/metadarkstyledsgn.lpk
+          lazbuild --add-package-link submodules/pltis_djoin/pack/pltis_djoin.lpk
           lazbuild --add-package-link packages/OpenRSATCore/OpenRSATCore.lpk
+          lazbuild --add-package-link packages/OpenRSATGUI/OpenRSATGUI.lpk
 
       - name: Build OpenRSAT (linux-x64)
         run: lazbuild --build-mode=linux-x64 sources/OpenRSAT.lpi
