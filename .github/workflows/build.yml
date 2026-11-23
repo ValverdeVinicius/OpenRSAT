@@ -24,9 +24,11 @@ jobs:
           - name: linux-x64
             os: ubuntu-22.04
 
-          - name: linux-arm64
-            os: ubuntu-22.04
-          
+          # arm64 needs a cross-compiler or a native arm runner; keep it out
+          # of the release matrix until that is configured.
+          # - name: linux-arm64
+          #   os: ubuntu-22.04
+
           # - name: macosx-intel
           #   os: macos-latest
 
@@ -35,6 +37,9 @@ jobs:
 
     name: Build OpenRSAT — ${{ matrix.target.name }}
     runs-on: ${{ matrix.target.os }}
+    # linux-x64 is the required target for the deb/rpm release.
+    # Windows failures should not block publishing the Linux packages.
+    continue-on-error: ${{ matrix.target.name != 'linux-x64' }}
 
     steps:
       - name: Checkout repository
