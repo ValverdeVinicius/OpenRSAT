@@ -412,7 +412,7 @@ var
   DNSRecord: TDNSRecord;
 begin
   D.Init(JSON_FAST);
-  if not DNSRecordBytesToRecord(DNSRecord, PByteArray(R)^) then
+  if not DNSRecordBytesToRecord(DNSRecord, PByteArray(R)^, Length(R)) then
     Exit;
   if TDnsResourceRecord(DNSRecord.RecType) = drrPTR then
     D.AddValue('name', ReverseDnsToIP(ZoneN, NodeN))

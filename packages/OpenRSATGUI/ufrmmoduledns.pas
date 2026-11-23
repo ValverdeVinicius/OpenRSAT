@@ -422,7 +422,8 @@ begin
     Exit;
   for i := 0 to DNSRecordAttr.Count - 1 do
   begin
-    if not DNSRecordBytesToRecord(DNSRecord, PByteArray(DNSRecordAttr.GetRaw(i))^) then
+    if not DNSRecordBytesToRecord(DNSRecord, PByteArray(DNSRecordAttr.GetRaw(i))^,
+      Length(DNSRecordAttr.GetRaw(i))) then
       Continue;
     if DNSRecord.RecType <> Ord(drrSOA) then
       Continue;
@@ -667,7 +668,7 @@ var
   DNSRecord: TDNSRecord;
 begin
   D.Init(JSON_FAST);
-  if not DNSRecordBytesToRecord(DNSRecord, PByteArray(R)^) then
+  if not DNSRecordBytesToRecord(DNSRecord, PByteArray(R)^, Length(R)) then
     Exit;
   if TDnsResourceRecord(DNSRecord.RecType) = drrPTR then
     D.AddValue('name', ReverseDnsToIP(ZoneN, NodeN))

@@ -399,7 +399,8 @@ function DNSPropertyZoneDCPromoConvertToStringFromBytes(const Buffer: TByteArray
 
 // Decode a dnsRecord bytes array into a TDNSRecord record.
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dnsp/6912b338-5472-4f59-b912-0edb536b6ed8
-function DNSRecordBytesToRecord(out DNSRecord: TDNSRecord; const Buffer: TByteArray): Boolean;
+function DNSRecordBytesToRecord(out DNSRecord: TDNSRecord; const Buffer: TByteArray;
+  ABufferLen: Integer = 0): Boolean;
 // Encode a TDNSRecord record into a dnsRecord bytes array.
 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dnsp/6912b338-5472-4f59-b912-0edb536b6ed8
 function DNSRecordRecordToBytes(out Buffer: TByteArray; const DNSRecord: TDNSRecord): Integer;
@@ -522,7 +523,7 @@ begin
   try
     Move(Buffer, DNSIPArray.AddrCount, SizeOf(Cardinal));
     SetLength(DNSIPArray.AddrArray, DNSIPArray.AddrCount);
-    for i := 0 to Pred(DNSIPArray.AddrCount) do
+    for i := 0 to Integer(DNSIPArray.AddrCount) - 1 do
       Move(Buffer[SizeOf(Cardinal) + SizeOf(Cardinal) * i], DNSIPArray.AddrArray[i], SizeOf(Cardinal));
     result := True;
   finally
@@ -537,7 +538,7 @@ begin
   result := 0;
   try
     Move(DNSIPArray.AddrCount, Buffer, SizeOf(Cardinal));
-    for i := 0 to Pred(DNSIPArray.AddrCount) do
+    for i := 0 to Integer(DNSIPArray.AddrCount) - 1 do
       Move(DNSIPArray.AddrArray[i], Buffer[4 + SizeOf(Cardinal) * i], SizeOf(Cardinal));
     result := SizeOf(Cardinal) + SizeOf(Cardinal) * DNSIPArray.AddrCount;
   finally
@@ -552,7 +553,7 @@ begin
   if Length(DNSIPArray.AddrArray) <= 0 then
     Exit;
   result := Format('[%s', [DNSIPArray.AddrArray[0]]);
-  for i := 1 to Pred(DNSIPArray.AddrCount) do
+  for i := 1 to Integer(DNSIPArray.AddrCount) - 1 do
     result := Format('%s, %s', [result, DNSIPArray.AddrArray[i]]);
   result := Format('%s]', [result]);
 end;
@@ -574,7 +575,7 @@ var
 begin
   DNSIPArray.AddrCount := Length(IPARRAY);
   SetLength(DNSIPArray.AddrArray, DNSIPArray.AddrCount);
-  for i := 0 to Pred(DNSIPArray.AddrCount) do
+  for i := 0 to Integer(DNSIPArray.AddrCount) - 1 do
   begin
     if not netAddr.SetFromIP4(IPARRAY[i], True) then
       Exit;
@@ -659,7 +660,7 @@ begin
     Move(Buffer[SizeOf(Cardinal) * 6 + SizeOf(Word) * 2], DNSAddrArray.Reserved2, SizeOf(Cardinal));
     idx := SizeOf(Cardinal) * 7 + SizeOf(Word) * 2;
     SetLength(DNSAddrArray.AddrArray, DNSAddrArray.MaxCount);
-    for i := 0 to Pred(DNSAddrArray.MaxCount) do
+    for i := 0 to Integer(DNSAddrArray.MaxCount) - 1 do
       DNSAddrBytesToRecord(DNSAddrArray.AddrArray[i], PByteArray(@Buffer[idx + i * SizeOf(TDNSAddr)])^);
     result := True;
   finally
@@ -683,7 +684,7 @@ begin
     Move(DNSAddrArray.Reserved1, Buffer[SizeOf(Cardinal) * 5 + SizeOf(Word) * 2], SizeOf(Cardinal));
     Move(DNSAddrArray.Reserved2, Buffer[SizeOf(Cardinal) * 6 + SizeOf(Word) * 2], SizeOf(Cardinal));
     result := SizeOf(Cardinal) * 7 + SizeOf(Word) * 2;
-    for i := 0 to Pred(DNSAddrArray.MaxCount) do
+    for i := 0 to Integer(DNSAddrArray.MaxCount) - 1 do
       DNSAddrRecordToBytes(PByteArray(@Buffer[result + SizeOf(TDNSAddr) * i])^, DNSAddrArray.AddrArray[i]);
     result := result + DNSAddrArray.MaxCount * SizeOf(TDNSAddr);
   finally
@@ -1218,11 +1219,16 @@ begin
 end;
 
 function DNSRecordBytesToRecord(out DNSRecord: TDNSRecord;
-  const Buffer: TByteArray): Boolean;
+  const Buffer: TByteArray; ABufferLen: Integer): Boolean;
 var
-  i: Integer;
+  i, DataLength: Integer;
 begin
   result := False;
+
+  // When the real buffer length is known, reject truncated records before
+  // reading anything, to avoid any out-of-bounds access on malformed data.
+  if (ABufferLen > 0) and (ABufferLen < 24) then
+    Exit;
 
   DNSRecord.DataLength := (Buffer[1] shl 8) or Buffer[0];
   DNSRecord.RecType := (Buffer[3] shl 8) or Buffer[2];
@@ -1234,7 +1240,14 @@ begin
   DNSRecord.Reserved := (Buffer[19] shl 24) or (Buffer[18] shl 16) or (Buffer[17] shl 8) or Buffer[16];
   DNSRecord.Timestamp := (Buffer[23] shl 24) or (Buffer[22] shl 16) or (Buffer[21] shl 8) or Buffer[20];
 
-  for i := 0 to Pred(DNSRecord.DataLength) do
+  DataLength := DNSRecord.DataLength;
+  if DataLength > SizeOf(DNSRecord.RData) then
+    Exit;
+  if (ABufferLen > 0) and (24 + DataLength > ABufferLen) then
+    Exit;
+
+  // Use an Integer loop bound: Pred(Word(0)) would wrap to 65535.
+  for i := 0 to DataLength - 1 do
     DNSRecord.RData[i] := Buffer[24 + i];
   result := True;
 end;
@@ -1242,26 +1255,30 @@ end;
 function DNSCOUNTNAMEBytesToRecord(out DNSCOUNTNAME: TDNSCOUNTNAME;
   const Buffer: TByteArray): Boolean;
 var
-  idx, i: Integer;
+  idx, i, LabelCount, NameLen: Integer;
 begin
   result := False;
-  try
-    DNSCOUNTNAME.Length := Buffer[0];
-    DNSCOUNTNAME.LabelCount := Buffer[1];
-    SetLength(DNSCOUNTNAME.RawName, DNSCOUNTNAME.LabelCount);
-    if DNSCOUNTNAME.LabelCount = 0 then
-      Exit;
+  NameLen := Buffer[0];
+  LabelCount := Buffer[1];
+  DNSCOUNTNAME.Length := NameLen;
+  DNSCOUNTNAME.LabelCount := LabelCount;
+  SetLength(DNSCOUNTNAME.RawName, LabelCount);
 
-    idx := 2;
-    for i := 0 to Pred(DNSCOUNTNAME.LabelCount) do
-    begin
-      DNSCOUNTNAME.RawName[i].Length := Buffer[idx];
-      DNSCOUNTNAME.RawName[i].Name := Copy(String(@Buffer[1]), idx + 1, DNSCOUNTNAME.RawName[i].Length);
-      idx := idx + DNSCOUNTNAME.RawName[i].Length + 1;
-    end;
-    result := True;
-  finally
+  // LabelCount is a Byte: using Pred(LabelCount) here would wrap 0 to 255
+  // and read past the record. The declared name length is also used as a
+  // hard limit so malformed records are rejected instead of corrupting memory.
+  idx := 2;
+  for i := 0 to LabelCount - 1 do
+  begin
+    if idx >= 2 + NameLen then
+      Exit;
+    DNSCOUNTNAME.RawName[i].Length := Buffer[idx];
+    if idx + 1 + DNSCOUNTNAME.RawName[i].Length > 2 + NameLen then
+      Exit;
+    DNSCOUNTNAME.RawName[i].Name := Copy(String(@Buffer[1]), idx + 1, DNSCOUNTNAME.RawName[i].Length);
+    idx := idx + DNSCOUNTNAME.RawName[i].Length + 1;
   end;
+  result := True;
 end;
 
 function DNSCOUNTNAMERecordToBytes(out Buffer: TByteArray;
@@ -1269,14 +1286,19 @@ function DNSCOUNTNAMERecordToBytes(out Buffer: TByteArray;
 var
   idx, i: Integer;
 begin
+  result := -1;
+  if Integer(DNSCOUNTNAME.LabelCount) > Length(DNSCOUNTNAME.RawName) then
+    Exit;
+
   Buffer[0] := DNSCOUNTNAME.Length;
   Buffer[1] := DNSCOUNTNAME.LabelCount;
 
   idx := 2;
-  for i := 0 to Pred(DNSCOUNTNAME.LabelCount) do
+  for i := 0 to Integer(DNSCOUNTNAME.LabelCount) - 1 do
   begin
     Buffer[idx] := DNSCOUNTNAME.RawName[i].Length;
-    Move(DNSCOUNTNAME.RawName[i].Name[1], Buffer[idx + 1], DNSCOUNTNAME.RawName[i].Length);
+    if DNSCOUNTNAME.RawName[i].Length > 0 then
+      Move(DNSCOUNTNAME.RawName[i].Name[1], Buffer[idx + 1], DNSCOUNTNAME.RawName[i].Length);
     idx := idx + DNSCOUNTNAME.RawName[i].Length + 1;
   end;
   Buffer[idx] := 0;
@@ -1288,7 +1310,9 @@ var
   i: Integer;
 begin
   result := '';
-  for i := 0 to Pred(DNSCOUNTNAME.LabelCount) do
+  if Integer(DNSCOUNTNAME.LabelCount) > Length(DNSCOUNTNAME.RawName) then
+    Exit;
+  for i := 0 to Integer(DNSCOUNTNAME.LabelCount) - 1 do
   begin
     if (i = 0) then
       result := FormatUtf8('%', [DNSCOUNTNAME.RawName[i].Name])
@@ -1308,7 +1332,7 @@ begin
   Count := 0;
   DNSCOUNTNAME.LabelCount := Length(AValueArray);
   SetLength(DNSCOUNTNAME.RawName, DNSCOUNTNAME.LabelCount);
-  for i := 0 to Pred(DNSCOUNTNAME.LabelCount) do
+  for i := 0 to Integer(DNSCOUNTNAME.LabelCount) - 1 do
   begin
     DNSCOUNTNAME.RawName[i].Length := Length(AValueArray[i]);
     DNSCOUNTNAME.RawName[i].Name := AValueArray[i];
@@ -1320,7 +1344,7 @@ end;
 function DNSRecordRecordToBytes(out Buffer: TByteArray;
   const DNSRecord: TDNSRecord): Integer;
 var
-  i: Integer;
+  i, DataLength: Integer;
 begin
   result := -1;
 
@@ -1357,10 +1381,11 @@ begin
   Buffer[22] := (DNSRecord.Timestamp shr 16) and $ff;
   Buffer[23] := (DNSRecord.Timestamp shr 24) and $ff;
 
-  for i := 0 to Pred(DNSRecord.DataLength) do
+  DataLength := DNSRecord.DataLength;
+  for i := 0 to DataLength - 1 do
     Buffer[24 + i] := DNSRecord.RData[i];
-  Buffer[24 + i + 1] := 0;
-  result := 24 + i + 1;
+  Buffer[24 + DataLength] := 0;
+  result := 24 + DataLength + 1;
 end;
 
 function DNSRecordToString(const DNSRecord: TDNSRecord): RawUtf8;
@@ -1759,9 +1784,11 @@ operator=(Destination: TDNSCOUNTNAME; Source: TDNSCOUNTNAME): Boolean;
 var
   i: Integer;
 begin
-  result := (Destination.Length = Source.Length) and (Destination.LabelCount = Source.LabelCount);
+  result := (Destination.Length = Source.Length) and (Destination.LabelCount = Source.LabelCount) and
+    (Integer(Destination.LabelCount) <= Length(Destination.RawName)) and
+    (Integer(Source.LabelCount) <= Length(Source.RawName));
   if result then
-    for i := 0 to Pred(Destination.LabelCount) do
+    for i := 0 to Integer(Destination.LabelCount) - 1 do
     begin
       result := result and (Destination.RawName[i].Length = Source.RawName[i].Length) and (Destination.RawName[i].Name = Source.RawName[i].Name);
       if not result then

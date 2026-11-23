@@ -49,7 +49,7 @@ var
   DNSRecord: TDNSRecord;
 begin
   result := '';
-  if DNSRecordBytesToRecord(DNSRecord, PByteArray(Raw)^) then
+  if DNSRecordBytesToRecord(DNSRecord, PByteArray(Raw)^, Length(Raw)) then
     result := DNSRecordDataToString(DNSRecord);
 end;
 
