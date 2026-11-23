@@ -1,18 +1,19 @@
-#/bin/sh
+#!/bin/bash
 
 # Usage:
-# ./build.sh <VERSION:0.4.226> <ARCH:x64,arm64,arm32,x86> <ICON_PATH:./icon.png>
+# ./build.sh <VERSION:0.4.226> <ARCH:x64,arm64,arm32,x86> <ICON_PATH:./icon.png> [BIN_PATH]
 
-USAGE="./build.sh <VERSION:0.4.226> <ARCH:x64> <ICON_PATH:./icon.png>"
+USAGE="./build.sh <VERSION:0.4.226> <ARCH:x64> <ICON_PATH:./icon.png> [BIN_PATH]"
 
 set -ex
 VERSION=$1
 ARCH=$2
 ICON_PATH=$3
+BIN_PATH=${4:-}
 BUILDDIR=$PWD/builddir
 URL="https://github.com/tranquilit/openrsat/releases/download/v"$VERSION
 
-if [ "$#" -ne 3 ]; then
+if [ "$#" -lt 3 ]; then
   echo "Invalid number of arguments."
   echo "Usage:"
   echo "	$USAGE"
@@ -40,16 +41,21 @@ mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS}
 echo "Setup download URL"
 BINURL=$URL/OpenRSAT-linux-$ARCH
 
-echo "Download from $URL to ~/rpmbuild/SOURCES/OpenRSAT"
-wget -O ~/rpmbuild/SOURCES/OpenRSAT $BINURL
+if [ -n "$BIN_PATH" ]; then
+  echo "Copy local binary: $BIN_PATH"
+  cp "$BIN_PATH" ~/rpmbuild/SOURCES/OpenRSAT
+else
+  echo "Download from $URL to ~/rpmbuild/SOURCES/OpenRSAT"
+  wget -O ~/rpmbuild/SOURCES/OpenRSAT $BINURL
+fi
 
 echo "Copy icon file"
 [ -f $ICON_PATH ] || (echo "$ICON_PATH does not exists." && exit)
 cp $ICON_PATH ~/rpmbuild/SOURCES/OpenRSAT.png
 
 echo "Copy OpenRSAT.desktop file"
-[ -f "./OpenRSAT.desktop" ] || (echo "./OpenRSAT.desktop does not exists." && exit)
-cp ./OpenRSAT.desktop ~/rpmbuild/SOURCES/OpenRSAT.desktop
+[ -f "../OpenRSAT.desktop" ] || (echo "../OpenRSAT.desktop does not exists." && exit)
+cp ../OpenRSAT.desktop ~/rpmbuild/SOURCES/OpenRSAT.desktop
 
 echo "Copy locale files."
 for l in en fr pl el

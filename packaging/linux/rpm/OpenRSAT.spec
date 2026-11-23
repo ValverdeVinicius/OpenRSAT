@@ -5,7 +5,7 @@ Version:        %{_version}
 Release:        1%{?dist}
 Summary:        OpenRSAT made by Tranquil IT
 
-BuildArch:	x86_64
+BuildArch:	%{_rpmarch}
 
 License:        GPL
 URL:            https://www.tranquil.it
@@ -50,3 +50,6 @@ install -Dpm0755 %{SOURCE6} %{buildroot}/usr/share/locale/el/OpenRSAT.po
 %post
 rm -rf /usr/bin/OpenRSAT
 ln -s /opt/openrsat/OpenRSAT /usr/bin/OpenRSAT
+
+%postun
+rm -f /usr/bin/OpenRSAT
