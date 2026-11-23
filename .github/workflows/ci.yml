@@ -25,7 +25,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          submodules: recursive
+          # Only top-level submodules: pltis_djoin has a nested mORMot2
+          # submodule pointing to an internal WAPT GitLab which is not
+          # reachable from GitHub Actions. The top-level mORMot2 is enough.
+          submodules: true
 
       - name: Setup 7-zip
         uses: milliewalky/setup-7-zip@v2
