@@ -686,7 +686,7 @@ procedure TFrmModuleDNS.DisplayNodes(const SelectedNode: TTreeNode;
   const DNSNodes: TDNSNodeDynArray);
 var
   DNSNode: TDNSNode;
-  Paths: TAnsiStringArray;
+  Paths: TStringArray;
   ParentNode, ChildNode: TTreeNode;
   i: Integer;
   Data: TDnsTreeNodeData;
