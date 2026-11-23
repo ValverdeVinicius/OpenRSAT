@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Build OpenRSAT (linux-x64)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Setup 7-zip
+        uses: milliewalky/setup-7-zip@v2
+
+      - name: Download and extract mORMot2 static
+        run: |
+          curl -L -o mormot2static.7z https://synopse.info/files/mormot2static.7z
+          7z x -y mormot2static.7z -ostatic
+          rm -rf submodules/mORMot2/static
+          mv static submodules/mORMot2/static
+          rm mormot2static.7z
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git subversion unzip \
+            libx11-dev libgtk2.0-dev libgdk-pixbuf2.0-dev \
+            libcairo2-dev libpango1.0-dev texinfo bison
+
+      - name: Cache binutils
+        id: cache-binutils
+        uses: actions/cache@v4
+        with:
+          path: binutils-2.45
+          key: binutils-2.45-${{ runner.os }}
+
+      - name: Build windres
+        if: steps.cache-binutils.outputs.cache-hit != 'true'
+        run: |
+          curl -L -o binutils-2.45.tar.xz https://github.com/osvegn/binutils/raw/refs/heads/main/binutils-2.45.tar.xz
+          tar -xf binutils-2.45.tar.xz
+          cd binutils-2.45
+          ./configure
+          make
+          cd binutils && make windres
+          cp ./windres ../../
+
+      - name: Install windres
+        run: |
+          if [ -f binutils-2.45/binutils/windres ]; then
+            sudo cp binutils-2.45/binutils/windres /usr/local/bin/windres
+          else
+            chmod 755 ./windres
+            sudo cp ./windres /usr/local/bin/windres
+          fi
+          sudo chmod 755 /usr/local/bin/windres
+
+      - name: Install FPC and Lazarus IDE
+        uses: osvegn/setup-lazarus-fpcup@v1.0.1
+        with:
+          laz: lazarus_4_0
+          fpc: release_3_2_2
+
+      - name: Link packages
+        run: |
+          lazbuild --version
+          lazbuild --add-package-link submodules/mORMot2/packages/lazarus/mormot2.lpk
+          lazbuild --add-package-link submodules/pltis_uicomponents/pack/pltis_uicomponents.lpk
+          lazbuild --add-package-link submodules/pltis_tsmbios/Packages/tsmbios.lpk
+          lazbuild --add-package-link submodules/pltis_utils/pltis_utils.lpk
+          lazbuild --add-package-link submodules/pltis_virtualtrees/virtualtreeview_package.lpk
+          lazbuild --add-package-link submodules/metadarkstyle/metadarkstyle.lpk
+          lazbuild --add-package-link submodules/metadarkstyle/metadarkstyledsgn.lpk
+          lazbuild --add-package-link packages/OpenRSATCore/OpenRSATCore.lpk
+
+      - name: Build OpenRSAT (linux-x64)
+        run: lazbuild --build-mode=linux-x64 sources/OpenRSAT.lpi
+
+      - name: Upload built binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRSAT-ci-linux-x64
+          path: bin/linux-x64/OpenRSAT
