@@ -121,6 +121,7 @@ type
     fDistinguishedName: RawUtf8;
 
     function DoBeforeApply: Boolean;
+    function DoApply: Boolean;
     procedure DoAfterApply;
     function GetLdapClient: TLdapClient;
     function LoadAttributes: Boolean;
@@ -701,6 +702,20 @@ begin
   result := True;
 end;
 
+function TVisProperties.DoApply: Boolean;
+begin
+  result := False;
+  if not DoBeforeApply then
+    Exit;
+  if not fProperty.ApplyModification then
+  begin
+    ShowLdapModifyError(fProperty.RSAT.LdapClient);
+    Exit;
+  end;
+  DoAfterApply;
+  result := True;
+end;
+
 procedure TVisProperties.DoAfterApply;
 var
   i: Integer;
@@ -825,10 +840,7 @@ end;
 
 procedure TVisProperties.Action_ApplyExecute(Sender: TObject);
 begin
-  if not DoBeforeApply then
-    Exit;
-  fProperty.ApplyModification;
-  DoAfterApply;
+  DoApply;
 end;
 
 procedure TVisProperties.Action_ApplyUpdate(Sender: TObject);
@@ -843,8 +855,10 @@ end;
 
 procedure TVisProperties.Action_OKExecute(Sender: TObject);
 begin
-  Action_Apply.Execute();
-  Close();
+  ModalResult := mrNone;
+  if not DoApply then
+    Exit;
+  Close;
 end;
 
 end.

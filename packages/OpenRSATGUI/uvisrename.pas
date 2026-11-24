@@ -93,6 +93,10 @@ type
 
 implementation
 
+uses
+  ucommon,
+  ursatldapclientui;
+
 {$R *.lfm}
 
 { TVisRename }
@@ -109,18 +113,44 @@ end;
 procedure TVisRename.Action_OKExecute(Sender: TObject);
 var
   Attributes: TLdapAttributeList;
+  NewDistinguishedName: RawUtf8;
+
+  procedure AddIfNotEmpty(const AttributeName, AttributeValue: RawUtf8);
+  begin
+    if AttributeValue <> '' then
+      Attributes.Add(AttributeName, AttributeValue);
+  end;
+
 begin
+  ModalResult := mrNone;
+
   Attributes := TLdapAttributeList.Create;
-  Attributes.Add('displayName', DisplayName);
-  Attributes.Add('sn', LastName);
-  Attributes.Add('givenName', FirstName);
-  Attributes.Add('userPrincipalName', UserPrincipalName);
-  Attributes.Add('sAMAccountName', SAMAccountName);
+  try
+    AddIfNotEmpty('displayName', DisplayName);
+    AddIfNotEmpty('sn', LastName);
+    AddIfNotEmpty('givenName', FirstName);
+    AddIfNotEmpty('userPrincipalName', UserPrincipalName);
+    AddIfNotEmpty('sAMAccountName', SAMAccountName);
 
-  if not LdapClient.Modify(DistinguishedName, lmoReplace, Attributes) then
+    if (Attributes.Count > 0) and
+      (not LdapClient.Modify(DistinguishedName, lmoReplace, Attributes)) then
+    begin
+      ShowLdapModifyError(LdapClient);
+      Exit;
+    end;
+  finally
+    FreeAndNil(Attributes);
+  end;
+
+  NewDistinguishedName := RenameDistinguishedName(LdapClient, DistinguishedName, FullName);
+  if NewDistinguishedName = '' then
+  begin
+    ShowLdapRenameError(LdapClient);
     Exit;
+  end;
 
-  DistinguishedName := RenameDistinguishedName(LdapClient, DistinguishedName, FullName);
+  DistinguishedName := NewDistinguishedName;
+  ModalResult := mrOK;
 end;
 
 function TVisRename.GetDisplayName: RawUtf8;
@@ -237,7 +267,7 @@ function TVisRename.RenameDistinguishedName(const LdapClient: TLdapClient;
   const DistinguishedName, NewName: RawUtf8): RawUtf8;
 var
   Pairs: TNameValueDNs;
-  NewRdn, NewSuperior: RawUtf8;
+  NewRdn, NewSuperior, EscapedName: RawUtf8;
   DeleteOldRdn: boolean;
   i: Integer;
 begin
@@ -248,7 +278,16 @@ begin
   if not ParseDN(DistinguishedName, Pairs) then
     Exit;
 
-  Pairs[0].Value := NewName;
+  if Pairs[0].Value = NewName then
+  begin
+    result := DistinguishedName;
+    Exit;
+  end;
+
+  if not LdapEscapeName(NewName, EscapedName) then
+    Exit;
+
+  Pairs[0].Value := EscapedName;
   NewRdn := FormatUtf8('%=%', [Pairs[0].Name, Pairs[0].Value]);
 
   if not LdapClient.ModifyDN(DistinguishedName, NewRdn, NewSuperior, DeleteOldRdn) then

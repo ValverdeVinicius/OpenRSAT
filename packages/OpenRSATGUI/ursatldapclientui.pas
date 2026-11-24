@@ -30,6 +30,7 @@ type
 function ShowLdapError(LdapClient: TLdapClient): TModalResult;
 function ShowLdapSearchError(LdapClient: TLdapClient): TModalResult;
 function ShowLdapModifyError(LdapClient: TLdapClient): TModalResult;
+function ShowLdapRenameError(LdapClient: TLdapClient): TModalResult;
 function ShowLdapDeleteError(LdapClient: TLdapClient): TModalResult;
 function ShowLdapConnectError(LdapClient: TLdapClient): TModalResult;
 function ShowLdapAddError(LdapClient: TLdapClient): TModalResult;
@@ -142,6 +143,15 @@ begin
   Message := GetLdapErrorCustomMessage(LdapClient);
 
   result := ShowLdapError(FormatUtf8(rsLdapModifyFailed, [Message]));
+end;
+
+function ShowLdapRenameError(LdapClient: TLdapClient): TModalResult;
+var
+  Message: RawUtf8;
+begin
+  Message := GetLdapErrorCustomMessage(LdapClient);
+
+  result := ShowLdapError(FormatUtf8(rsLdapRenameFailed, [Message]));
 end;
 
 function ShowLdapDeleteError(LdapClient: TLdapClient): TModalResult;

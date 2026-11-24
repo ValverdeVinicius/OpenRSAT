@@ -90,6 +90,7 @@ resourcestring
   rsLdapConnectFailed = 'Ldap connect failed: "%"';
   rsLdapSearchFailed = 'Ldap search failed: "%"';
   rsLdapModifyFailed = 'Ldap modify failed: "%"';
+  rsLdapRenameFailed = 'Ldap rename failed: "%"';
   rsLdapMissingTLS = 'You try to connect to a Domain Controller without TLS connection. It is highly recommanded to enable TLS with a simple connection.';
   rsLdapTLSInvalidCert = 'TLS connection is enabled, but the certificate is not recognized. Be carefull.';
   rsLdapSuccessConnMessage = 'Connection to domain "%" with domain controller "%" on port "%" can be established.';
