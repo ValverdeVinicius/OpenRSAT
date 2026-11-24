@@ -42,7 +42,8 @@ uses
   ufrmnewmsdnsserversettings, ufrmpropertygeneralintersitetransport, 
   uvisviewkeytab, uopenrsatuicontextinterface, ufrmpropertygplinks, 
   uvislistgpo, ufrmpropertygeneralgpo, uvisrename, uvisobjectsselector, 
-  ufrmpropertypso, uhintwindow, ufrmnewpasswordsettings, LazarusPackageIntf;
+  ufrmpropertypso, uhintwindow, ufrmnewpasswordsettings, ufrmmodulegpo, 
+  LazarusPackageIntf;
 
 implementation
 

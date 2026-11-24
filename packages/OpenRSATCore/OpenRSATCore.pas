@@ -17,6 +17,7 @@ uses
   ugeneralpropertysitelinkbridge, udoublelistlogic, unewsitelinkbridge, ulog, 
   ugeneralpropertyserver, ugeneralpropertyntdsdsa, uschedulinglogic, 
   ugeneralpropertyntds, uwindows.ncrypt, uldapclient, udnsservice, 
+  ugpocore, ugpregpol, ugptcore, umodulegpooption, umodulegpo, 
   LazarusPackageIntf;
 
 implementation

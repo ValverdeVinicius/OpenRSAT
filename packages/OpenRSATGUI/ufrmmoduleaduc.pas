@@ -42,6 +42,7 @@ uses
   ufrmmoduleaducoption,
   uopenrsatuicontextinterface,
   uvisobjectsselector,
+  ufrmmodulegpo,
   ufrmmodule,
   ufrmoption,
   umodule,
@@ -90,6 +91,7 @@ type
     Action_NewGroup: TAction;
     Action_NewInetOrgPerson: TAction;
     Action_NewOU: TAction;
+    Action_NewGPO: TAction;
     Action_NewSharedFolder: TAction;
     Action_NewUser: TAction;
     Action_Next: TAction;
@@ -183,6 +185,7 @@ type
     Panel3: TPanel;
     Panel4: TPanel;
     Panel5: TPanel;
+    Panel_GPO: TPanel;
     PopupMenu1: TPopupMenu;
     SelectDirectoryDialog1: TSelectDirectoryDialog;
     Separator1: TMenuItem;
@@ -257,6 +260,8 @@ type
     procedure Action_NewOUExecute(Sender: TObject);
     procedure Action_NewOUUpdate(Sender: TObject);
     procedure Action_NewPasswordSettingsExecute(Sender: TObject);
+    procedure Action_NewGPOExecute(Sender: TObject);
+    procedure Action_NewGPOUpdate(Sender: TObject);
     procedure Action_NewPrinterExecute(Sender: TObject);
     procedure Action_NewPrinterUpdate(Sender: TObject);
     procedure Action_NewResourcePropertyListExecute(Sender: TObject);
@@ -363,7 +368,25 @@ type
 
     fUpdating: Integer;
 
+    // Last control (tree or grid) that had the selection focus.
+    fLastFocused: TWinControl;
+
+    // Embedded GPO editor, shown when a GPO node is selected.
+    fGPOFrame: TFrmModuleGPO;
+    fGPOEditorVisible: Boolean;
+    fSavedPanel4Visible: Boolean;
+    fSavedPanel5Visible: Boolean;
+    fSavedSplitter2Visible: Boolean;
+
+    procedure ShowGPOEditor(const ADistinguishedName: RawUtf8);
+    procedure HideGPOEditor;
+
+    function GetNewGPOParentDN: RawUtf8;
+    function LinkGPO(const AContainerDN, AGPODN: RawUtf8): Boolean;
+
     function GetLdapClient: TRsatLdapClient;
+    function GetSelectionControl: TWinControl;
+    procedure SelectionControlEnter(Sender: TObject);
     procedure UpdateTreeImages(ANode: TADUCTreeNode);
 
     procedure UpdateGPLink(ANode: TADUCTreeNode; Flag: Integer);
@@ -435,6 +458,8 @@ uses
   mormot.crypt.secure,
   mormot.crypt.core,
   mormot.core.os,
+  ugpocore,
+  ugptcore,
   ugplink;
 
 {$R *.lfm}
@@ -1123,11 +1148,29 @@ begin
 end;
 
 procedure TFrmModuleADUC.Action_NewOUExecute(Sender: TObject);
+var
+  ObjectOU, ObjectClass: RawUtf8;
 begin
   if Assigned(fLog) then
     fLog.Add.Log(sllTrace, '% - Execute', [Action_NewOU.Caption]);
 
-  With TVisNewObject.Create(Self, vnotOrganizationalUnit, GetFocusedObject(True), LdapClient.DefaultDN(), LdapClient) do
+  ObjectOU := GetFocusedObject(True);
+  if ObjectOU = '' then
+  begin
+    MessageDlg(Action_NewOU.Caption, rsNewObjectNoContainer, mtWarning,
+      [mbOK], 0);
+    Exit;
+  end;
+
+  ObjectClass := GetFocusedObjectClass;
+  if (ObjectClass <> 'domainDNS') and (ObjectClass <> 'organizationalUnit') then
+  begin
+    MessageDlg(Action_NewOU.Caption, rsNewObjectOUInvalidParent, mtWarning,
+      [mbOK], 0);
+    Exit;
+  end;
+
+  With TVisNewObject.Create(Self, vnotOrganizationalUnit, ObjectOU, LdapClient.DefaultDN(), LdapClient) do
   begin
     PageCount := 1;
     if ShowModal = mrOK then
@@ -1155,6 +1198,175 @@ begin
   finally
     FreeAndNil(Vis);
   end;
+end;
+
+function TFrmModuleADUC.GetNewGPOParentDN: RawUtf8;
+var
+  Node: TADUCTreeNode;
+  ParentData: TADUCTreeNodeObject;
+begin
+  result := '';
+
+  Node := TreeADUC.Selected as TADUCTreeNode;
+  if not Assigned(Node) then
+    Exit;
+
+  if Node.NodeType = atntGPO then
+  begin
+    if not Assigned(Node.Parent) then
+      Exit;
+    ParentData := (Node.Parent as TADUCTreeNode).GetNodeDataObject;
+    if Assigned(ParentData) then
+      result := ParentData.DistinguishedName;
+  end
+  else
+    result := GetFocusedObject(True);
+end;
+
+function TFrmModuleADUC.LinkGPO(const AContainerDN, AGPODN: RawUtf8): Boolean;
+var
+  Obj: TLdapResult;
+  Attr: TLdapAttribute;
+  GPLinkArr: TGPLinkDynArr;
+  Link: TGPLink;
+  GPLink: RawUtf8;
+begin
+  result := False;
+
+  if (AContainerDN = '') or (AGPODN = '') then
+    Exit;
+
+  Obj := LdapClient.SearchObject(AContainerDN, '', ['gPLink']);
+  if Assigned(Obj) then
+  begin
+    Attr := Obj.Find('gPLink');
+    if Assigned(Attr) then
+      GPLink := Attr.GetReadable();
+  end;
+
+  try
+    GPLinkArr := GPLinkToGPLinkArr(GPLink);
+  except
+    Exit;
+  end;
+
+  Link.Link := '';
+  Link.DistinguishedName := AGPODN;
+  Link.Flag := 0;
+  Insert(Link, GPLinkArr, Length(GPLinkArr));
+
+  GPLink := GPLinkArrToGPLink(GPLinkArr);
+  result := LdapClient.Modify(AContainerDN, lmoReplace, 'gPLink', GPLink);
+end;
+
+procedure TFrmModuleADUC.Action_NewGPOExecute(Sender: TObject);
+var
+  DisplayName, ParentDN, GPCDN: RawUtf8;
+  Logic: TGPOLogic;
+  GPT: TGPTCore;
+  GPO: TGPO;
+  Node, ParentNode, GPONode: TADUCTreeNode;
+  BackupOnError: TNotifyEvent;
+begin
+  if Assigned(fLog) then
+    fLog.Add.Log(sllTrace, '% - Execute', [Action_NewGPO.Caption]);
+
+  ParentDN := GetNewGPOParentDN;
+  if ParentDN = '' then
+  begin
+    MessageDlg(rsGPONewTitle, rsGPONoContainer, mtWarning, [mbOK], 0);
+    Exit;
+  end;
+
+  DisplayName := InputBox(rsGPONewTitle, rsGPONewPrompt, '');
+  if DisplayName = '' then
+    Exit;
+
+  Logic := TGPOLogic.Create(LdapClient);
+  GPT := TGPTCore.Create(LdapClient);
+  GPO := nil;
+  BackupOnError := LdapClient.OnError;
+  LdapClient.OnError := nil;
+  try
+    try
+      GPCDN := Logic.Add(LdapClient.DefaultDN, DisplayName);
+    except
+      on E: EGPOException do
+      begin
+        MessageDlg(rsGPONewTitle, E.Message, mtError, [mbOK], 0);
+        Exit;
+      end;
+      on E: Exception do
+      begin
+        MessageDlg(rsGPONewTitle, E.Message, mtError, [mbOK], 0);
+        Exit;
+      end;
+    end;
+
+    if GPCDN = '' then
+    begin
+      MessageDlg(rsGPONewTitle, rsGPOCreateFailed, mtError, [mbOK], 0);
+      Exit;
+    end;
+
+    GPO := Logic.FindByName(LdapClient.DefaultDN, DisplayName);
+    if not Assigned(GPO) then
+    begin
+      MessageDlg(rsGPONewTitle, rsGPOCreateFailed, mtError, [mbOK], 0);
+      Logic.Delete(GPCDN);
+      Exit;
+    end;
+
+    if not GPT.CreateGPO(GPO, DisplayName) then
+    begin
+      MessageDlg(rsGPONewTitle,
+        FormatUtf8('%: %', [rsGPOCreateGptFailed, GPT.LastError]),
+        mtError, [mbOK], 0);
+      Logic.Delete(GPCDN);
+      Exit;
+    end;
+
+    if not LinkGPO(ParentDN, GPCDN) then
+      MessageDlg(rsGPONewTitle, rsGPOCreateLinkFailed, mtWarning, [mbOK], 0);
+
+    Node := TreeADUC.Selected as TADUCTreeNode;
+    ParentNode := Node;
+    if Assigned(Node) then
+    begin
+      if (Node.NodeType = atntGPO) then
+        ParentNode := Node.Parent as TADUCTreeNode
+      else if (Node.NodeType = atntObject) and
+              Assigned(Node.GetNodeDataObject) and
+              not IsContainer(Node.GetNodeDataObject.LastObjectClass) then
+        ParentNode := Node.Parent as TADUCTreeNode;
+    end;
+
+    if Assigned(ParentNode) then
+    begin
+      RefreshADUCTreeNode(ParentNode);
+      GPONode := ParentNode.GetFirstChildGPO;
+      while Assigned(GPONode) do
+      begin
+        if GPONode.GetNodeDataGPO.DistinguishedName = GPCDN then
+        begin
+          GPONode.Selected := True;
+          Break;
+        end;
+        GPONode := ParentNode.GetNextChildGPO(GPONode);
+      end;
+    end;
+  finally
+    GPO.Free;
+    GPT.Free;
+    Logic.Free;
+    LdapClient.OnError := BackupOnError;
+  end;
+end;
+
+procedure TFrmModuleADUC.Action_NewGPOUpdate(Sender: TObject);
+begin
+  Action_NewGPO.Enabled := Assigned(LdapClient) and LdapClient.Connected and
+    Assigned(TreeADUC.Selected);
 end;
 
 procedure TFrmModuleADUC.Action_NewPrinterExecute(Sender: TObject);
@@ -1212,11 +1424,21 @@ begin
 end;
 
 procedure TFrmModuleADUC.Action_NewUserExecute(Sender: TObject);
+var
+  ObjectOU: RawUtf8;
 begin
   if Assigned(fLog) then
     fLog.Add.Log(sllTrace, '% - Execute', [Action_NewUser.Caption]);
 
-  With TVisNewObject.Create(Self, vnotUser, GetFocusedObject(True), LdapClient.DefaultDN, LdapClient) do
+  ObjectOU := GetFocusedObject(True);
+  if ObjectOU = '' then
+  begin
+    MessageDlg(Action_NewUser.Caption, rsNewObjectNoContainer, mtWarning,
+      [mbOK], 0);
+    Exit;
+  end;
+
+  With TVisNewObject.Create(Self, vnotUser, ObjectOU, LdapClient.DefaultDN, LdapClient) do
   begin
     PageCount := 3;
     if ShowModal = mrOK then
@@ -1840,16 +2062,60 @@ begin
   Timer_SearchInGrid.Enabled := False;
 end;
 
+procedure TFrmModuleADUC.ShowGPOEditor(const ADistinguishedName: RawUtf8);
+begin
+  if not Assigned(fGPOFrame) then
+    Exit;
+
+  if not fGPOEditorVisible then
+  begin
+    fSavedPanel4Visible := Panel4.Visible;
+    fSavedPanel5Visible := Panel5.Visible;
+    fSavedSplitter2Visible := Splitter2.Visible;
+    fGPOEditorVisible := True;
+  end;
+
+  Panel4.Visible := False;
+  Panel5.Visible := False;
+  Splitter2.Visible := False;
+  GridADUC.Visible := False;
+  Panel_GPO.Visible := True;
+  fGPOFrame.SelectGPO(ADistinguishedName);
+end;
+
+procedure TFrmModuleADUC.HideGPOEditor;
+begin
+  if not fGPOEditorVisible then
+    Exit;
+
+  Panel_GPO.Visible := False;
+  GridADUC.Visible := True;
+  Panel4.Visible := fSavedPanel4Visible;
+  Panel5.Visible := fSavedPanel5Visible;
+  Splitter2.Visible := fSavedSplitter2Visible;
+  fGPOEditorVisible := False;
+end;
+
 procedure TFrmModuleADUC.Timer_TreeChangeNodeTimer(Sender: TObject);
+var
+  Node: TADUCTreeNode;
 begin
   if Assigned(fLog) then
     fLog.Add.Log(sllTrace, 'Tree Change Timer', Self);
 
   Timer_TreeChangeNode.Enabled := False;
 
-  RefreshADUCTreeNode((TreeADUC.Selected as TADUCTreeNode));
-  UpdateTreeImages((TreeADUC.Selected as TADUCTreeNode));
-  UpdateGridADUC((TreeADUC.Selected as TADUCTreeNode));
+  Node := TreeADUC.Selected as TADUCTreeNode;
+  if Assigned(Node) and (Node.NodeType = atntGPO) then
+  begin
+    ShowGPOEditor(Node.GetNodeDataGPO.DistinguishedName);
+    Exit;
+  end;
+
+  HideGPOEditor;
+  RefreshADUCTreeNode(Node);
+  UpdateTreeImages(Node);
+  UpdateGridADUC(Node);
 end;
 
 procedure TFrmModuleADUC.TisSearchEdit_TreeADUCSearch(Sender: TObject;
@@ -3012,6 +3278,24 @@ begin
   GridADUC.Refresh;
 end;
 
+function TFrmModuleADUC.GetSelectionControl: TWinControl;
+begin
+  if GridADUC.Focused then
+    result := GridADUC
+  else if TreeADUC.Focused then
+    result := TreeADUC
+  else if Assigned(fLastFocused) then
+    result := fLastFocused
+  else
+    result := TreeADUC;
+end;
+
+procedure TFrmModuleADUC.SelectionControlEnter(Sender: TObject);
+begin
+  if Sender is TWinControl then
+    fLastFocused := TWinControl(Sender);
+end;
+
 function TFrmModuleADUC.GetSelectedObjects: TRawUtf8DynArray;
 var
   SelectedRows: TDocVariantData;
@@ -3077,21 +3361,14 @@ var
 begin
   result := [];
 
-  if GridADUC.Focused then
+  if GetSelectionControl = GridADUC then
   begin
     result := GetSelectedObjectsInGrid;
     if (Length(result) = 0) then // If no result, fallback to tree selection
       result := GetSelectedObjectsInTree;
   end
-  else if TreeADUC.Focused then
-  begin
-    result := GetSelectedObjectsInTree;
-  end
   else
-  begin
-    if Assigned(fLog) then
-      fLog.Add.Log(sllWarning, 'Focus is not on grid nor tree.', Self);
-  end;
+    result := GetSelectedObjectsInTree;
 end;
 
 function TFrmModuleADUC.GetFocusedObject(OnlyContainer: Boolean): RawUtf8;
@@ -3145,22 +3422,17 @@ var
 begin
   result := '';
 
-  if GridADUC.Focused then
+  if GetSelectionControl = GridADUC then
   begin
     result := GetFocusedObjectInGrid(ObjectClass);
     if (result = '') then // If no result, fallback to tree selection
       result := GetFocusedObjectInTree(ObjectClass);
   end
-  else if TreeADUC.Focused then
-  begin
-    result := GetFocusedObjectInTree(ObjectClass);
-  end
   else
-  begin
-    if Assigned(fLog) then
-      fLog.Add.Log(sllWarning, 'Focus is not on grid nor tree.', Self);
-    Exit;
-  end;
+    result := GetFocusedObjectInTree(ObjectClass);
+
+  if (result = '') then // Last fallback: use the grid selection.
+    result := GetFocusedObjectInGrid(ObjectClass);
 
   if OnlyContainer and not IsContainer(ObjectClass) then
     result := GetParentDN(result);
@@ -3214,7 +3486,7 @@ var
 begin
   result := '';
 
-  if GridADUC.Focused then
+  if GetSelectionControl = GridADUC then
   begin
     Row := GridADUC.FocusedRow;
     if not Assigned(Row) or not Row^.Exists('objectClass') then
@@ -3226,15 +3498,14 @@ begin
     else
       Result := GetObjectClassFromRow(Row);
   end
-  else if TreeADUC.Focused then
-  begin
-    result := GetFocusedObjectClassInTree;
-  end
   else
+    result := GetFocusedObjectClassInTree;
+
+  if (result = '') then // Last fallback: use the grid selection.
   begin
-    if Assigned(fLog) then
-      fLog.Add.Log(sllWarning, 'Focus is not on grid nor tree.', Self);
-    Exit;
+    Row := GridADUC.FocusedRow;
+    if Assigned(Row) then
+      result := GetObjectClassFromRow(Row);
   end;
 end;
 
@@ -3258,6 +3529,8 @@ end;
 procedure TFrmModuleADUC.LdapConnectEvent(Sender: TObject);
 begin
   fModuleAduc.NeedRefresh := True;
+  if Assigned(fGPOFrame) then
+    fGPOFrame.Refresh;
 end;
 
 procedure TFrmModuleADUC.LdapCloseEvent(Sender: TObject);
@@ -3397,6 +3670,21 @@ begin
   fModuleAduc := TModuleADUC.Create(fIContext.RSAT);
   fTreeSelectionHistory := TTreeSelectionHistory.Create;
 
+  fLastFocused := TreeADUC;
+  GridADUC.OnEnter := @SelectionControlEnter;
+  TreeADUC.OnEnter := @SelectionControlEnter;
+
+  fGPOEditorVisible := False;
+  fGPOFrame := TFrmModuleGPO.Create(fIContext);
+  fGPOFrame.Parent := Panel_GPO;
+  fGPOFrame.Align := alClient;
+  fGPOFrame.Panel_Left.Visible := False;
+  fGPOFrame.Splitter1.Visible := False;
+  // GPO creation is handled by the ADUC action, which also creates the GPT
+  // on the SYSVOL and links the GPO to the selected container.
+  fGPOFrame.Action_Create.Visible := False;
+  fGPOFrame.ToolButton_Create.Visible := False;
+
   fADUCRootNode := (TreeADUC.Items.Add(nil, 'Active Directory Users and Computers') as TADUCTreeNode);
   fADUCRootNode.ImageIndex := Ord(ileAppIcon);
   fADUCRootNode.SelectedIndex := fADUCRootNode.ImageIndex;
@@ -3413,8 +3701,8 @@ begin
   RegisterNewMenuActions('domainDNS', [Action_NewComputer, Action_NewContact, Action_NewGroup, Action_NewInetOrgPerson, Action_NewMsDSShadowPrincipalContainer, Action_NewMsImagingPSPs, Action_NewOU, Action_NewPrinter, Action_NewUser, Action_NewSharedFolder]);
   RegisterNewMenuActions('builtinDomain', [Action_NewComputer, Action_NewGroup, Action_NewInetOrgPerson, Action_NewUser]);
   RegisterNewMenuActions('organizationalUnit', [Action_NewComputer, Action_NewContact, Action_NewGroup, Action_NewInetOrgPerson, Action_NewMsDSShadowPrincipalContainer, Action_NewMsImagingPSPs, Action_NewOU, Action_NewPrinter, Action_NewUser, Action_NewSharedFolder]);
-  RegisterNewMenuActions('container', [Action_NewComputer, Action_NewContact, Action_NewGroup, Action_NewInetOrgPerson, Action_NewMsDSKeyCredential, Action_NewResourcePropertyList, Action_NewMsDSShadowPrincipalContainer, Action_NewMsImagingPSPs, Action_NewOU, Action_NewPrinter, Action_NewUser, Action_NewSharedFolder]);
-  RegisterNewMenuActions('lostAndFound', [Action_NewComputer, Action_NewContact, Action_NewGroup, Action_NewInetOrgPerson, Action_NewMsDSKeyCredential, Action_NewResourcePropertyList, Action_NewMsDSShadowPrincipalContainer, Action_NewMsImagingPSPs, Action_NewOU, Action_NewPrinter, Action_NewUser, Action_NewSharedFolder]);
+  RegisterNewMenuActions('container', [Action_NewComputer, Action_NewContact, Action_NewGroup, Action_NewInetOrgPerson, Action_NewMsDSKeyCredential, Action_NewResourcePropertyList, Action_NewMsDSShadowPrincipalContainer, Action_NewMsImagingPSPs, Action_NewPrinter, Action_NewUser, Action_NewSharedFolder]);
+  RegisterNewMenuActions('lostAndFound', [Action_NewComputer, Action_NewContact, Action_NewGroup, Action_NewInetOrgPerson, Action_NewMsDSKeyCredential, Action_NewResourcePropertyList, Action_NewMsDSShadowPrincipalContainer, Action_NewMsImagingPSPs, Action_NewPrinter, Action_NewUser, Action_NewSharedFolder]);
   RegisterNewMenuActions('msDS-PasswordSettingsContainer', [Action_NewPasswordSettings]);
   fIContext.IniPropStorage.IniSection := Name;
   CheckBox_IncludeSubContainer.Checked := fIContext.IniPropStorage.ReadBoolean(CheckBox_IncludeSubContainer.Name, False);
@@ -3428,6 +3716,7 @@ begin
   fIContext.IniPropStorage.IniSection := Name;
   fIContext.IniPropStorage.WriteBoolean(CheckBox_IncludeSubContainer.Name, CheckBox_IncludeSubContainer.Checked);
 
+  FreeAndNil(fGPOFrame);
   FreeAndNil(fTreeSelectionHistory);
   FreeAndNil(fModuleAduc);
 

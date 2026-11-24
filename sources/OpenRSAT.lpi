@@ -18,7 +18,7 @@
       </XPManifest>
       <Icon Value="0"/>
       <Resources Count="1">
-        <Resource_0 FileName="..\languages\country_codes_en.json" Type="RCDATA" ResourceName="COUNTRY_CODES_EN"/>
+        <Resource_0 FileName="../languages/country_codes_en.json" Type="RCDATA" ResourceName="COUNTRY_CODES_EN"/>
       </Resources>
     </General>
     <i18n>
@@ -451,6 +451,7 @@
       </Item>
       <Item>
         <PackageName Value="mormot2"/>
+        <Filename Value="..\submodules\mORMot2\packages\lazarus\mormot2.lpk"/>
       </Item>
     </RequiredPackages>
     <Units>
@@ -458,6 +459,11 @@
         <Filename Value="OpenRSAT.lpr"/>
         <IsPartOfProject Value="True"/>
         <UnitName Value="openrsat"/>
+      </Unit>
+      <Unit>
+        <Filename Value="uthemeinit.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="uthemeinit"/>
       </Unit>
       <Unit>
         <Filename Value="uvisopenrsat.pas"/>

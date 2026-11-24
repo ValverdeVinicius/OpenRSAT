@@ -8,13 +8,15 @@ uses
   {$IFDEF INTEGRATION}
   integrationtest.uadvancedsecuritypresenter,
   integrationtest.ugeneralpropertysitelink,
+  integrationtest.ugpocore,
   {$ENDIF INTEGRATION}
   unittest.uadvancedsecuritypresenter,
   unittest.ugeneratekeytab,
   unittest.uviewkeytabpresenter,
   unittest.udoublelistlogic,
   unittest.uscheduling,
-  unittest.udns;
+  unittest.udns,
+  unittest.ugpocore;
 
 type
 
@@ -40,7 +42,8 @@ begin
     TUnitTestViewKeyTabPresenter,
     TUnitTestDoubleListLogic,
     TUnitTestScheduling,
-    TUnitTestDNS
+    TUnitTestDNS,
+    TUnitTestGPOCore
   ]);
 end;
 
@@ -49,7 +52,8 @@ procedure TOpenRSATTests.Integrations;
 begin
   AddCase([
     TIntegrationTestAdvancedSecurityPresenter,
-    TIntegrationTestGeneralPropertySiteLink
+    TIntegrationTestGeneralPropertySiteLink,
+    TIntegrationTestGPOCore
   ]);
 end;
 {$ENDIF INTEGRATION}

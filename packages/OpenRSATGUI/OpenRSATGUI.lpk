@@ -12,7 +12,7 @@
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
-    <Files Count="110">
+    <Files Count="111">
       <Item1>
         <Filename Value="ufrmmoduleaduc.pas"/>
         <UnitName Value="ufrmmoduleaduc"/>
@@ -453,6 +453,10 @@
         <Filename Value="ufrmnewpasswordsettings.pas"/>
         <UnitName Value="ufrmnewpasswordsettings"/>
       </Item110>
+      <Item111>
+        <Filename Value="ufrmmodulegpo.pas"/>
+        <UnitName Value="ufrmmodulegpo"/>
+      </Item111>
     </Files>
     <CompatibilityMode Value="True"/>
     <i18n>
@@ -482,6 +486,7 @@
       </Item7>
       <Item8>
         <PackageName Value="mormot2"/>
+        <Filename Value="..\..\submodules\mORMot2\packages\lazarus\mormot2.lpk"/>
       </Item8>
       <Item9>
         <PackageName Value="FCL"/>

@@ -114,6 +114,7 @@
       </Item>
       <Item>
         <PackageName Value="mormot2"/>
+        <Filename Value="..\submodules\mORMot2\packages\lazarus\mormot2.lpk"/>
       </Item>
     </RequiredPackages>
     <Units>
@@ -195,6 +196,18 @@
       </Unit>
       <Unit>
         <Filename Value="unit\unittest.udns.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="..\packages\OpenRSATCore\ugpocore.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="unit\unittest.ugpocore.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="integration\integrationtest.ugpocore.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit>
     </Units>
